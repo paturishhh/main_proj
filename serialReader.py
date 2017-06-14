@@ -15,7 +15,10 @@ def parsePacket():
     print(packet)
     packet = bytearray(packet) #bytearray(b'\x01\x00\x03\x0b\xfe')
 
+    count = 0
+    curCount = 0
     index = 0
+
     for b in packet: #255, 1, 0, 3, 15, 0, 0, 0, 1, 254
         if index == 9:#port data 2
             if b == 254:
@@ -58,10 +61,13 @@ def parsePacket():
                 index = 1
     if isValid == True:
         #check if inserting port data or command
-        print("insert db")
+        # print("insert db")
         if packetDetails[1] == 15: 
+            print("printing packet details")
+            print(packetDetails)
             insertPortData(packetDetails)
         else:
+            print(packetDetails)
             insertCommand(packetDetails)
     else:
         print("invalid packet")
@@ -138,28 +144,31 @@ def insertPortData(packetDetails): #remember to close db after access
     
     try: 
         while isPortDataLeft: #loop while there is data
-            portNum = packetDetails[3 + (4 * currentDataCount)] + packetDetails[4 + (4 * currentDataCount)] #get port number
+            portNum = packetDetails[3 + (3 * currentDataCount)] #get port number
             portId = findPortId(nodeId, portNum)
         
             if portId == 0: #add new port if port id not found
                 insertPort(portNum, nodeId)
                 portId = findPortId(nodeId, portNum)        
-            else: #port is stored
-                print("port is there!")
-            
+            # else: #port is stored
+            #     print("port is there!")
+
+
+            # print("port num: " + str(portNum))
+            # print("port id: " + str(portId))
             currTime = time.localtime()
             timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
-            portValue = (packetDetails[5 + (4 * currentDataCount)] * 256) + packetDetails[6 + (4 * currentDataCount)]
-            print(portValue)
+            portValue = (packetDetails[4 + (3 * currentDataCount)] * 256) + packetDetails[5 + (3 * currentDataCount)]
 
-            sql = "INSERT INTO PortValue(port_id, port_value, time_stamp) VALUES ('%d', '%d')" % (portId, portValue, timeStamp)
-            print(sql)
+            sql = "INSERT INTO PortValue(port_id, port_value, time_stamp) VALUES ('%d', '%d', '%s')" % (portId, portValue, timeStamp)
+            # print(sql)
             cur.execute(sql)
             database.commit()
 
-            currentDataCount +=1
-            if currentDataCount == dataCount:
+            if (currentDataCount == dataCount):
                 isPortDataLeft = False
+            else:
+                currentDataCount +=1
          
     except (MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
@@ -186,6 +195,7 @@ def insertPort(portNum, nodeId):
 
 def insertCommand(packetDetails):
     "save command sent on database"
+    print("@ insert command")
 
     nodeAddr = packetDetails[0]
     try:
