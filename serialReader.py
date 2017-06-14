@@ -76,47 +76,77 @@ def readSerial():
 
     if arduino.is_open:
         time.sleep(2) #wait
-        while arduino.in_waiting > 0: #while there is data
+        while arduino.in_waiting > 0 and (len(packetQueue) != QUEUE_SIZE): 
+        #while there is data and queue not full
             data = arduino.readline()[:-2] #removes /r and /n
             
             if len(packetQueue) != QUEUE_SIZE:
                 packetQueue.append(data) #insert data to queue
-                parsePacket() #parse one when full
+                # parsePacket() #parse one when full
                 # print(data)
                 # print(len(packetQueue))
             else:
-                parsePacket() #parse one when full
-                packetQueue.append(data)
-                print('back')
-                print(list(packetQueue))
-        while len(packetQueue) != 0: #just empty the queue if there is no message
-            parsePacket() 
+                print("queue is full")
         arduino.close() #close serial
     else:
         print('derp')
 
-def insertPortData(packetDetails): #remember to close db after access    
+def findNodeId(node_address_physical):
+    "returns the nodeId given the node's physical address"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT node_id FROM Node WHERE node_address_physical = '%d'" % node_address_physical
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
+        if result is None:
+            nodeId = 0
+        else:
+            nodeId = result[0]
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return nodeId
+
+def findPortId(nodeId, portNum):
+    "return port id by sending node id and portNum"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT port_id FROM NodePort WHERE node_id = '%d' AND port_number = '%d'" % (nodeId, portNum)
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
+        if result is None:
+            portId = 0
+        else:
+            portId = result[0]
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return portId
+    
+def insertPortData(packetDetails): #remember to close db after access  
+    "insert port data details"  
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
     nodeAddr = packetDetails[0]
+    nodeId = findNodeId(nodeAddr)
     print("@ insert port data")
     dataCount = packetDetails[2] #port num & port value
     currentDataCount = 0
     isPortDataLeft = True
     
     try: 
-        while isPortDataLeft:
+        while isPortDataLeft: #loop while there is data
             portNum = packetDetails[3 + (4 * currentDataCount)] + packetDetails[4 + (4 * currentDataCount)] #get port number
-            sql = "SELECT port_id FROM NodePort WHERE node_id = '%d' AND port_number = '%d'" % (nodeAddr, portNum)
-            cur.execute(sql)
+            portId = findPortId(nodeId, portNum)
         
-            if cur.rowcount == 0: #add new port if there is none
-                insertPort(portNum, nodeAddr)
-                cur.execute(sql) #execute query again
-            else:
+            if portId == 0: #add new port if port id not found
+                insertPort(portNum, nodeId)
+                portId = findPortId(nodeId, portNum)        
+            else: #port is stored
                 print("port is there!")
             
-            portId = cur.fetchone() # got the port id na
             currTime = time.localtime()
             timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
             portValue = (packetDetails[5 + (4 * currentDataCount)] * 256) + packetDetails[6 + (4 * currentDataCount)]
@@ -127,11 +157,9 @@ def insertPortData(packetDetails): #remember to close db after access
             cur.execute(sql)
             database.commit()
 
+            currentDataCount +=1
             if currentDataCount == dataCount:
                 isPortDataLeft = False
-            else:
-                currentDataCount +=1
-
          
     except (MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
@@ -158,24 +186,24 @@ def insertPort(portNum, nodeId):
 
 def insertCommand(packetDetails):
     "save command sent on database"
-    nodeAddr = packetDetails[0]
-    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
-    cur = database.cursor()
-    sql = "SELECT * FROM Node WHERE node_id = '%d'" % nodeAddr
 
+    nodeAddr = packetDetails[0]
     try:
-        cur.execute(sql)
-        result = cur.fetchone()
+        nodeId = findNodeId(nodeAddr) #check if there is already added
         
-        if cur.rowcount == 0: #new node
+        if nodeId == 0: #new node
             addNode(nodeAddr)
+            nodeId = findNodeId(nodeAddr)
         else:
             print("proceed with life")
+
+        database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+        cur = database.cursor()
 
         currTime = time.localtime()
         commandCode = packetDetails[1]
         timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
-        sql = "INSERT INTO Command(node_id, command_code, time_stamp) VALUES ('%d', '%d', '%s')" % (nodeAddr, commandCode, timeStamp)
+        sql = "INSERT INTO Command(node_id, command_code, time_stamp) VALUES ('%d', '%d', '%s')" % (nodeId, commandCode, timeStamp)
         cur.execute(sql)
         database.commit()
         
@@ -201,16 +229,25 @@ def addNode(nodeAddr):
 
 def inputConfiguration(command):
     "Convert configuration (string) to bytes for saving in the database"               
-    command = bytearray(command, 'utf-8')
-    packetDetails = array('I') #stores packet details (sourceAddr, command, count, portNum and port data)
+    command = command.upper() # upper case all
+    command = command.split() # split parameters ['FF', '00'] a str
+    packetDetails = array('I') #stores packet (sourceAddr, command, count, portNum and port data)
 
-    for segment in command:
-        # print(packetDetails.append(hex(segment)))
-        # string to int
-        # append to packetDetails
-        # save parameters
-        # send 
-        print(type(hex(segment))) #0X46 0X46 0X20
+    for c in command: #FF
+        temp = int(c, 16) #255; int
+        packetDetails.append(temp) 
+        
+    print(packetDetails)
+    arduino = serial.Serial()
+    arduino.port = 'COM4'
+    arduino.baudrate = 9600
+    arduino.timeout = None
+
+    # arduino.open()
+    # arduino.write(command)
+    # time.sleep(2)
+    # arduino.close()
+    #save to database    
 
     # send data back if there is something there
     #arduino.write
@@ -230,6 +267,8 @@ while choice != 3:
 
     if choice == '1':
         readSerial()
+        while len(packetQueue) != 0: #just empty the queue if there is no message
+            parsePacket() 
     elif choice == '2':
         command = input('Enter packet to send (bytes are separated by spaces): ')
         inputConfiguration(command)
