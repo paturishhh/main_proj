@@ -143,7 +143,7 @@ def addNodeConfig(configVersion, nodeId, nodeConfiguration):
     database.close()
 
 def addNodeProbeStatus(nodeId):
-    "adds node probe status log to database; accepts int"
+    "adds node probe status log to database with probe_time only filled; accepts int"
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
 
@@ -159,6 +159,27 @@ def addNodeProbeStatus(nodeId):
         print(e)
         database.rollback()
     database.close()
+
+def addNodeProbeReply(nodePhysicalAddr): #untested
+    "upon receiving a reply, it will insert a new row at probestatuslog with reply_time filled up; accepts int"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr) 
+
+    currTime = time.localtime()
+    timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)  
+
+    sql = "INSERT INTO ProbeStatusLog(node_id, reply_time)"\
+    " VALUES ('%d', '%s')" % (nodeId, timeStamp)
+
+    try:
+        cur.execute(sql)
+        database.commit()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+    database.close()
+
 
 def findNodeId(nodePhysicalAddr):
     "returns the nodeId given the node's physical address; accepts int"
@@ -228,7 +249,8 @@ def inputConfiguration(command):
         commandCode = packetDetails[4]
         if commandCode == 0:
             addNodeProbeStatus(nodeId)
-        addCommand()
+        else:
+            addCommand()
 
     sendMessage(packetDetails)
     readSerial()
@@ -301,11 +323,11 @@ def parsePacket(): #node can only send commands & data
         elif command == 1:
             #updateProbeNodeStatus
             print("a node reply")
-            updateProbeNodeStatus(packetDetails[0])
-            addCommand(packetDetails[0], packetDetails[1]) # still log it at database
+            addNodeProbeReply(packetDetails[0])        
         elif command == 6:
             #node config acknowledgement
             print("port config acknowledgement")
+            addCommand(packetDetails[0], packetDetails[1]) # still log it at database
         else:
             print(packetDetails)
             addCommand(packetDetails[0], packetDetails[1])
@@ -346,21 +368,7 @@ def sendMessage(packetDetails):
     arduino.write(array('B',packetDetails).tobytes())
     time.sleep(0.5)
 
-def updateProbeNodeStatus(nodePhysicalAddr): #untested
-    "updates the probe node status to success; accepts int"
-    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
-    cur = database.cursor()
-    nodeId = findNodeId(nodePhysicalAddr)   
 
-    sql = "UPDATE Probestatuslog SET node_reply = 1 WHERE node_id = '%d'" % nodeId
-
-    try:
-        cur.execute(sql)
-        database.commit()
-    except(MySQLdb.Error, MySQLdb.Warning) as e:
-        print(e)
-        database.rollback()
-    database.close()
     
 
 #main program
