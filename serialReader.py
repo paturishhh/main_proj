@@ -13,158 +13,10 @@ arduino.baudrate = 9600
 arduino.timeout = None
 arduino.open()
 
-def loadNodeConfig():
-    "load node config to database"
-    print("Derp")
+#Note: nodePhysicalAddr == node's physical address
+# nodeId = id of the node at the database
 
-def addNodeConfig(configVersion, nodeId, nodeConfiguration):
-    "adds node configuration to database; accepts int, int, string"
-
-    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
-    cur = database.cursor()
-    currTime = time.localtime()
-    timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime) 
-    sql = "INSERT INTO NodeConfiguration(node_configuration_version, node_id, time_stamp, node_configuration)"\
-    " VALUES ('%d', '%d', '%s', '%s')" % (configVersion, nodeId, timeStamp, nodeConfiguration)
-
-    try:
-        cur.execute(sql)
-        database.commit()
-    except (MySQLdb.Error, MySQLdb.Warning) as e:
-        print(e)
-        database.rollback()
-    database.close()
-
-def sendNodeConfig(packetDetails):
-    "send node config details to serial; accepts int[]"
-
-    arduino.write(array('B',packetDetails).tobytes())
-    time.sleep(2)
-    
-def parsePacket():
-    "gets the packet from queue & parse commands received from node"
-    packetDetails = array('I') #stores packet details (sourceAddr, command, count, portNum and port data)
-    packet = packetQueue.popleft()
-    isValid = False
-    
-    print(packet)
-    packet = bytearray(packet) #bytearray(b'\x01\x00\x03\x0b\xfe')
-
-    count = 0
-    curCount = 0
-    index = 0
-
-    for b in packet: #255, 1, 0, 3, 15, 0, 0, 0, 1, 254
-        if index == 9:#port data 2
-            if b == 254:
-                print("footer found")
-                isValid = True    
-        elif index == 8: #port data 1
-            packetDetails.append(b)
-            if (curCount == count) == True:
-                index = 9
-            else:
-                curCount += 1
-                index = 6
-        elif index == 7: #port number 2
-            packetDetails.append(b)
-            index = 8
-        elif index == 6: #port number 1
-            packetDetails.append(b)
-            index = 7
-        elif index == 5: #count
-            packetDetails.append(b)
-            count = b
-            curCount = 0
-            index = 6
-        elif index == 4: #command
-            packetDetails.append(b)
-            if b == 15:
-                index = 5
-            else:
-                index = 9
-        elif index == 3: #api
-            index = 4
-        elif index == 2: #dest 
-            index = 3
-        elif index == 1: #source address
-            packetDetails.append(b)
-            index = 2
-        elif index == 0:
-            if b == 255:
-                print("header found")
-                index = 1
-    if isValid == True:
-        #check if inserting port data or command
-        # print("insert db")
-        if packetDetails[1] == 15: 
-            print("printing packet details")
-            print(packetDetails)
-            addPortData(packetDetails)
-        else:
-            print(packetDetails)
-            addCommand(packetDetails)
-    else:
-        print("invalid packet")
-    
-def readSerial():
-    "read serial data from COM4"
-    
-    try:
-        if arduino.is_open:
-            time.sleep(2) #wait
-            while arduino.in_waiting > 0 and (len(packetQueue) != QUEUE_SIZE): 
-            #while there is data and queue not full
-                data = arduino.readline()[:-2] #removes /r and /n
-                
-                if len(packetQueue) != QUEUE_SIZE:
-                    packetQueue.append(data) #insert data to queue
-                    # parsePacket() #parse one when full
-                    # print(data)
-                    # print(len(packetQueue))
-                else:
-                    print("queue is full")
-            # arduino.close() #close serial
-        else:
-            print('derp')
-    except SerialException as e:
-        print(e)
-
-def findNodeId(nodePhysicalAddr):
-    "returns the nodeId given the node's physical address; accepts int"
-    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
-    cur = database.cursor()
-    sql = "SELECT node_id FROM Node WHERE node_address_physical = '%d'" % nodePhysicalAddr
-    try:
-        cur.execute(sql)
-        result = cur.fetchone()
-        if result is None:
-            nodeId = 0
-        else:
-            nodeId = result[0]
-    except(MySQLdb.Error, MySQLdb.Warning) as e:
-        print(e)
-    database.close()
-    return nodeId
-
-def findPortId(nodeId, portNum):
-    "return port id by sending node id and portNum; accepts int"
-    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
-    cur = database.cursor()
-    sql = "SELECT port_id FROM NodePort WHERE node_id = '%d' AND port_number = '%d'" % (nodeId, portNum)
-    try:
-        cur.execute(sql)
-        result = cur.fetchone()
-        if result is None:
-            portId = 0
-        else:
-            portId = result[0]
-    except(MySQLdb.Error, MySQLdb.Warning) as e:
-        print(e)
-    database.close()
-    return portId
-    
-def addPortData(packetDetails): #remember to close db after access  
+def addPortData(packetDetails):
     "insert port data details; accepts int[]"  
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
@@ -226,17 +78,17 @@ def addPort(portNum, nodeId):
 
     database.close()
 
-def addCommand(packetDetails):
+def addCommand(nodePhysicalAddr, commandCode):
+    #physical address node , commandCode
     "save command sent on database; accepts int []"
     print("@ insert command")
 
-    nodeAddr = packetDetails[0]
     try:
-        nodeId = findNodeId(nodeAddr) #check if there is already added
+        nodeId = findNodeId(nodePhysicalAddr) #check if there is already added
         
         if nodeId == 0: #new node
             addNode(nodeAddr)
-            nodeId = findNodeId(nodeAddr)
+            nodeId = findNodeId(nodePhysicalAddr)
         else:
             print("proceed with life")
 
@@ -244,7 +96,6 @@ def addCommand(packetDetails):
         cur = database.cursor()
 
         currTime = time.localtime()
-        commandCode = packetDetails[1]
         timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
         sql = "INSERT INTO Command(node_id, command_code, time_stamp) VALUES ('%d', '%d', '%s')" % (nodeId, commandCode, timeStamp)
         cur.execute(sql)
@@ -273,10 +124,75 @@ def addNode(nodePhysicalAddr):
         database.rollback()
     database.close()
 
-def retrievePacketQueue():
-    "parse messages while queue is not empty"
-    while len(packetQueue) != 0:
-            parsePacket() 
+def addNodeConfig(configVersion, nodeId, nodeConfiguration):
+    "adds node configuration to database; accepts int, int, string"
+
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    currTime = time.localtime()
+    timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime) 
+    sql = "INSERT INTO NodeConfiguration(node_configuration_version, node_id, time_stamp, node_configuration)"\
+    " VALUES ('%d', '%d', '%s', '%s')" % (configVersion, nodeId, timeStamp, nodeConfiguration)
+
+    try:
+        cur.execute(sql)
+        database.commit()
+    except (MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+    database.close()
+
+def addNodeProbeStatus(nodeId):
+    "adds node probe status log to database; accepts int"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+
+    currTime = time.localtime()
+    timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
+    sql = "INSERT INTO ProbeStatusLog(node_id, probe_time)"\
+    " VALUES ('%d', '%s')" % (nodeId, timeStamp)
+
+    try:
+        cur.execute(sql)
+        database.commit()
+    except (MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+    database.close()
+
+def findNodeId(nodePhysicalAddr):
+    "returns the nodeId given the node's physical address; accepts int"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT node_id FROM Node WHERE node_address_physical = '%d'" % nodePhysicalAddr
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
+        if result is None:
+            nodeId = 0
+        else:
+            nodeId = result[0]
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return nodeId
+
+def findPortId(nodeId, portNum):
+    "return port id by sending node id and portNum; accepts int"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT port_id FROM NodePort WHERE node_id = '%d' AND port_number = '%d'" % (nodeId, portNum)
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
+        if result is None:
+            portId = 0
+        else:
+            portId = result[0]
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return portId
 
 def inputConfiguration(command):
     "Convert configuration to bytes for saving in the database; accepts string"               
@@ -298,18 +214,153 @@ def inputConfiguration(command):
         addNode(nodePhysicalAddr)
         nodeId = findNodeId(nodePhysicalAddr) 
 
-    configVersion = packetDetails[4]
-    
-    nodeConfiguration = ""
-    for s in packetDetails:
-        nodeConfiguration += chr(s)
-        nodeConfiguration += " "
+    api = packetDetails[3]
+    if api == 2:
+        configVersion = packetDetails[4]
+        
+        nodeConfiguration = ""
+        for s in packetDetails:
+            nodeConfiguration += chr(s)
+            nodeConfiguration += " "
 
-    addNodeConfig(configVersion, nodeId, nodeConfiguration)
-    sendNodeConfig(packetDetails)
+        addNodeConfig(configVersion, nodeId, nodeConfiguration)
+    elif api == 3:
+        commandCode = packetDetails[4]
+        if commandCode == 0:
+            addNodeProbeStatus(nodeId)
+        addCommand()
+
+    sendMessage(packetDetails)
     readSerial()
     retrievePacketQueue()
+
+def loadNodeConfig():
+    "load node config to database"
+    print("Derp") #not implemented #not implemented
     
+def parsePacket(): #node can only send commands & data
+    "gets the packet from queue & parse commands or data received from node"
+    packetDetails = array('I') #stores packet details (sourceAddr, command, count, portNum and port data)
+    packet = packetQueue.popleft()
+    isValid = False
+    
+    print(packet)
+    packet = bytearray(packet) #bytearray(b'\x01\x00\x03\x0b\xfe')
+
+    count = 0
+    curCount = 0
+    index = 0
+
+    for b in packet: #255, 1, 0, 3, 15, 0, 0, 0, 1, 254
+        if index == 9:#port data 2
+            if b == 254:
+                print("footer found")
+                isValid = True    
+        elif index == 8: #port data 2
+            packetDetails.append(b) #packetDetails[5]
+            if (curCount == count) == True:
+                index = 9
+            else:
+                curCount += 1
+                index = 6
+        elif index == 7: #port data 1
+            packetDetails.append(b) #packetDetails[4]
+            index = 8
+        elif index == 6: #port number 1
+            packetDetails.append(b) #packetDetails[3]
+            index = 7
+        elif index == 5: #count
+            packetDetails.append(b) #packetDetails[2]
+            count = b
+            curCount = 0
+            index = 6
+        elif index == 4: #command
+            packetDetails.append(b) #packetDetails[1]
+            if b == 15:
+                index = 5
+            else:
+                index = 9
+        elif index == 3: #api
+            index = 4
+        elif index == 2: #dest 
+            index = 3
+        elif index == 1: #source address
+            packetDetails.append(b) #packetDetails[0]
+            index = 2
+        elif index == 0:
+            if b == 255:
+                print("header found")
+                index = 1
+    if isValid == True:
+        #check if inserting port data, command or probe node status
+        command = packetDetails[1]
+        if command == 15: 
+            #sending port data
+            print(packetDetails)
+            addPortData(packetDetails) # okay lang int [] kasi pwede madami
+        elif command == 1:
+            #updateProbeNodeStatus
+            print("a node reply")
+            updateProbeNodeStatus(packetDetails[0])
+            addCommand(packetDetails[0], packetDetails[1]) # still log it at database
+        elif command == 6:
+            #node config acknowledgement
+            print("port config acknowledgement")
+        else:
+            print(packetDetails)
+            addCommand(packetDetails[0], packetDetails[1])
+    else:
+        print("invalid packet")
+    
+def readSerial():
+    "read serial data from COM4 and store to queue"
+    
+    try:
+        if arduino.is_open:
+            # time.sleep(2) #wait
+            while arduino.in_waiting > 0 and (len(packetQueue) != QUEUE_SIZE): 
+            #while there is data and queue not full
+                data = arduino.readline()[:-2] #removes /r and /n
+                
+                if len(packetQueue) != QUEUE_SIZE:
+                    packetQueue.append(data) #insert data to queue
+                    # parsePacket() #parse one when full
+                    # print(data)
+                    # print(len(packetQueue))
+                else:
+                    print("queue is full")
+            # arduino.close() #close serial
+        else:
+            print('derp')
+    except SerialException as e:
+        print(e)
+
+def retrievePacketQueue():
+    "parse messages while queue is not empty"
+    while len(packetQueue) != 0:
+            parsePacket() 
+
+def sendMessage(packetDetails):
+    "send message to serial; accepts int[]"
+
+    arduino.write(array('B',packetDetails).tobytes())
+    time.sleep(0.5)
+
+def updateProbeNodeStatus(nodePhysicalAddr): #untested
+    "updates the probe node status to success; accepts int"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr)   
+
+    sql = "UPDATE Probestatuslog SET node_reply = 1 WHERE node_id = '%d'" % nodeId
+
+    try:
+        cur.execute(sql)
+        database.commit()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+    database.close()
     
 
 #main program
