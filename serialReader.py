@@ -17,7 +17,8 @@ arduino.open()
 # nodeId = id of the node at the database
 
 def addPortData(packetDetails):
-    "insert port data details; accepts int[]"  
+    "insert port data details; accepts int[]; returns True/False"  
+    isSuccess = False;
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
     nodeAddr = packetDetails[0]
@@ -52,6 +53,7 @@ def addPortData(packetDetails):
 
             if (currentDataCount == dataCount):
                 isPortDataLeft = False
+                isSuccess = True
             else:
                 currentDataCount +=1
          
@@ -60,9 +62,11 @@ def addPortData(packetDetails):
         database.rollback()
         
     database.close()
+    return isSuccess
     
 def addPort(portNum, nodeId):
-    "add port to nodePort table in databasel accepts int"
+    "add port to nodePort table in database accepts int; returns True/False"
+    isSuccess = False
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
 
@@ -72,22 +76,26 @@ def addPort(portNum, nodeId):
         sql = "INSERT INTO NodePort(port_number, node_id) VALUES ('%d', '%d')" % (portNum, nodeId)
         cur.execute(sql)
         database.commit()
+        isSuccess = True
     except(MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
         database.rollback()
 
     database.close()
+    return isSuccess
 
 def addCommand(nodePhysicalAddr, commandCode):
     #physical address node , commandCode
-    "save command sent on database; accepts int []"
+    "save command sent on database; accepts int []; returns True/False"
+    isSuccess = False
     print("@ insert command")
-
+    print(commandCode)
     try:
         nodeId = findNodeId(nodePhysicalAddr) #check if there is already added
+        commandCodeId = findCommandCodeId(commandCode)
         
         if nodeId == 0: #new node
-            addNode(nodeAddr)
+            addNode(nodePhysicalAddr)
             nodeId = findNodeId(nodePhysicalAddr)
         else:
             print("proceed with life")
@@ -97,9 +105,10 @@ def addCommand(nodePhysicalAddr, commandCode):
 
         currTime = time.localtime()
         timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
-        sql = "INSERT INTO Command(node_id, command_code, time_stamp) VALUES ('%d', '%d', '%s')" % (nodeId, commandCode, timeStamp)
+        sql = "INSERT INTO Command(node_id, command_code_id, time_stamp, command_code) VALUES ('%d', '%d', '%s', '%d')" % (nodeId, commandCodeId, timeStamp, commandCode)
         cur.execute(sql)
         database.commit()
+        isSuccess = True
         
     except (MySQLdb.Error, MySQLdb.Warning) as e:
         database.rollback()
@@ -107,7 +116,8 @@ def addCommand(nodePhysicalAddr, commandCode):
     database.close()
 
 def addNode(nodePhysicalAddr):
-    "add a new node at database when a new node is detected, auto add ports at database; accepts int"
+    "add a new node at database when a new node is detected, auto add ports at database; accepts int; returns True/False"
+    isSuccess = False
     print("@ add node")
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
@@ -119,13 +129,16 @@ def addNode(nodePhysicalAddr):
         nodeId = findNodeId(nodePhysicalAddr)
         for x in range(0, PORT_COUNT):
             addPort(x, nodeId)
+        isSuccess = True
     except (MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
         database.rollback()
     database.close()
+    return isSuccess
 
 def addNodeConfig(configVersion, nodeId, nodeConfiguration):
-    "adds node configuration to database; accepts int, int, string"
+    "adds node configuration to database; accepts int, int, string; returns True/False"
+    isSuccess = False
 
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
@@ -137,13 +150,40 @@ def addNodeConfig(configVersion, nodeId, nodeConfiguration):
     try:
         cur.execute(sql)
         database.commit()
+        isSuccess = True
     except (MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
         database.rollback()
     database.close()
+    return isSuccess
+
+def addNodeConfigReply(nodePhysicalAddr):
+    "upon receiving a reply, it will insert a new row at nodeconfigreply with time_stamp and port config status set to 1; returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr) 
+
+    currTime = time.localtime()
+    timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)  
+
+    sql = "INSERT INTO Nodeconfiguration(node_id, time_stamp, port_configuration_status)"\
+    " VALUES ('%d', '%s', 1)" % (nodeId, timeStamp)
+
+    try:
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except (MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+    database.close()
+    return isSuccess
+    print("derp")
 
 def addNodeProbeStatus(nodeId):
-    "adds node probe status log to database with probe_time only filled; accepts int"
+    "adds node probe status log to database with probe_time only filled; accepts int; returns True/False"
+    isSuccess = False
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
 
@@ -155,13 +195,15 @@ def addNodeProbeStatus(nodeId):
     try:
         cur.execute(sql)
         database.commit()
+        isSuccess = True
     except (MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
         database.rollback()
     database.close()
 
-def addNodeProbeReply(nodePhysicalAddr): #untested
-    "upon receiving a reply, it will insert a new row at probestatuslog with reply_time filled up; accepts int"
+def addNodeProbeReply(nodePhysicalAddr): 
+    "upon receiving a reply, it will insert a new row at probestatuslog with reply_time filled up; accepts int; returns True/False"
+    isSuccess = False
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
     nodeId = findNodeId(nodePhysicalAddr) 
@@ -175,11 +217,32 @@ def addNodeProbeReply(nodePhysicalAddr): #untested
     try:
         cur.execute(sql)
         database.commit()
+        isSuccess = True
     except(MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
         database.rollback()
     database.close()
+    return isSuccess
 
+def findCommandCodeId(commandCode):
+    "returns command code id by giving the command code"
+    print("@ command command code id")
+    commandCodeId = 0
+    try:
+        database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+        cur = database.cursor()
+        sql = "SELECT command_code_id FROM command_code WHERE command_code = '%d'" % commandCode
+        cur.execute(sql)
+        result = cur.fetchone()
+
+        if result is None:
+            commandCodeId = 0
+        else:
+            commandCodeId = result[0]
+    except (MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return commandCodeId
 
 def findNodeId(nodePhysicalAddr):
     "returns the nodeId given the node's physical address; accepts int"
@@ -250,7 +313,7 @@ def inputConfiguration(command):
         if commandCode == 0:
             addNodeProbeStatus(nodeId)
         else:
-            addCommand()
+            addCommand(nodePhysicalAddr, commandCode)
 
     sendMessage(packetDetails)
     readSerial()
@@ -327,7 +390,8 @@ def parsePacket(): #node can only send commands & data
         elif command == 6:
             #node config acknowledgement
             print("port config acknowledgement")
-            addCommand(packetDetails[0], packetDetails[1]) # still log it at database
+            addNodeConfigReply(packetDetails[0])
+            # addCommand(packetDetails[0], packetDetails[1]) # still log it at database
         else:
             print(packetDetails)
             addCommand(packetDetails[0], packetDetails[1])
@@ -368,8 +432,148 @@ def sendMessage(packetDetails):
     arduino.write(array('B',packetDetails).tobytes())
     time.sleep(0.5)
 
+def updateDeviceAttached(portId, deviceType): #untested
+    "to determine which device is connected to port eg servo, led, relay; returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
 
-    
+    print("@ update device attach")
+
+    try:
+        sql = "UPDATE NodePort SET device_attached = '%s' WHERE port_id = '%d'" % (deviceType, portId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+
+    database.close()
+    return isSuccess
+
+def updateCommandCodeDescription(commandCode, description): #untested
+    "updates command code description; returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    commandCodeId = findCommandCodeId(commandCode)
+
+    print("@ update node status")
+
+    try:
+        sql = "UPDATE Command_code SET description = '%s' WHERE command_code_id = '%d'" % (description, commandCodeId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+
+    database.close()
+    return isSuccess
+
+def updateNodeLogicalAddress(nodePhysicalAddr, logicalAddr):
+    "update node logical address; returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr)
+
+    print("@ update logical addr")
+
+    try:
+        sql = "UPDATE Node SET node_address_logical = '%d' WHERE node_id = '%d'" % (logicalAddr, nodeId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+
+    database.close()
+    return isSuccess #untested
+
+def updateNodeName(nodePhysicalAddr, nodeName): #untested
+    "updates node name for node distinction; returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr)
+
+    print("@ update node name")
+
+    try:
+        sql = "UPDATE Node SET node_name = '%s' WHERE node_id = '%d'" % (nodeName, nodeId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+
+    database.close()
+    return isSuccess
+
+def updateNodeStatus(nodePhysicalAddr, nodeStatus): #untested
+    "updates node status eg active(1) or not(0);returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr)
+
+    print("@ update node status")
+
+    try:
+        sql = "UPDATE Node SET node_active = '%d' WHERE node_id = '%d'" % (nodeStatus, nodeId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+
+    database.close()
+    return isSuccess #untested
+
+def updatePortDataType(nodePhysicalAddr, dataType): #untested
+    "update data type interpretation of port value of node eg float, int, string, byte;returns True/False"
+    isSuccess  = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+
+    print("@ update port data type")
+
+    try:
+        sql = "UPDATE NodePort SET data_type = '%s' WHERE port_id = '%d'" % (dataType, portId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+    database.close()
+    return isSuccess
+
+def updatePortType(nodePhysicalAddr, portType): #untested
+    "update port type eg actuator/sensor;returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+
+    print("@ update port type")
+
+    try:
+        sql = "UPDATE NodePort SET port_type = '%s' WHERE port_id = '%d'" % (portType, portId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+
+    database.close()
+    return isSuccess
 
 #main program
 choice = 0
@@ -384,6 +588,7 @@ while choice != 3:
     choice = input('Enter choice: ')
 
     if choice == '1':
+        time.sleep(2)
         readSerial()
         retrievePacketQueue()
     elif choice == '2':
