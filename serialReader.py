@@ -179,7 +179,6 @@ def addNodeConfigReply(nodePhysicalAddr):
         database.rollback()
     database.close()
     return isSuccess
-    print("derp")
 
 def addNodeProbeStatus(nodeId):
     "adds node probe status log to database with probe_time only filled; accepts int; returns True/False"
@@ -260,6 +259,22 @@ def findNodeId(nodePhysicalAddr):
         print(e)
     database.close()
     return nodeId
+
+def findNodeByPhysicalAddr(nodePhysicalAddr): #untested
+    "views node details by searching the physical address"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT node_address_logical, node_active, node_name FROM Node WHERE node_address_physical = '%d'" % (nodePhysicalAddr)
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
+
+        if result is None:
+            result = 0
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
 
 def findPortId(nodeId, portNum):
     "return port id by sending node id and portNum; accepts int"
@@ -574,6 +589,60 @@ def updatePortType(nodePhysicalAddr, portType): #untested
 
     database.close()
     return isSuccess
+
+def viewAllActiveNode(): #untested
+    "displays all active nodes"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT node_address_physical, node_address_logical, node_name FROM Node WHERE node_active = 1"
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result
+
+def viewAllInactiveNode(): #untested
+    "displays all inactive nodes"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT node_address_physical, node_address_logical, node_name FROM Node WHERE node_active = 0"
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result
+
+def viewAllNodeName(): #untested
+    "views all node names"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT node_name FROM Node"
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result
+
+def viewAllNode(): #untested
+    "views all nodes"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT * FROM Node"
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result    
+
+  
 
 #main program
 choice = 0
