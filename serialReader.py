@@ -642,7 +642,129 @@ def viewAllNode(): #untested
     database.close()
     return result    
 
-  
+def viewAllDataTypeOfNode(nodeId): #untested
+    "displays all data type of a node"
+    #[portNumber, data_type]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT port_number, data_type FROM nodeport as p, node as n WHERE n.node_id = p.node_id AND n.node_id = '%d'" %(nodeId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result    
+
+def viewAllPortTypeOfNode(nodeId): #untested
+    "display all port type of a nodes"
+    #[portNumber, port_type]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT port_number, port_type FROM nodeport as p, node as n WHERE n.node_id = p.node_id AND n.node_id = '%d'" %(nodeId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result    
+
+def viewAllPortDataOfPort(portId): #untested
+    "display all saved port data of node"
+    #[port_value, time_stamp, port_number]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT v.port_value, v.time_stamp, p.port_number FROM portvalue as v, nodeport as p WHERE "\
+    "v.port_id = p.port_id and p.port_id = '%d'" % (portId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result    
+
+def findAllConfigVersionOfNode(nodeId): #untested
+    "display all configversions of a node"
+    #[configVersion, configuration, configurationStatus]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT c.node_configuration_version, c.node_configuration, c.port_configuration_status, c.time_stamp FROM "\
+    "node as n, nodeconfiguration as c WHERE n.node_id = c.node_id AND n.node_id ='%d'" % (nodeId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
+
+def findNodeName(nodeId): #untested
+    "finds the node name given the nodeId"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT n.node_name FROM node AS n WHERE n.node_id = '%d'" % (nodeId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
+
+def viewAllProbeStatus(nodeId): #untested
+    "views all probe node status of a node"
+    #[probe_time, isReply, reply_time]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT p.probe_time, p.node_reply, p.reply_time FROM node AS n, probestatuslog as p WHERE "\
+    "n.node_id = p.node_id AND n.node_id = '%d'" % (nodeId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
+
+def viewAllConfig():
+    "views all configurations sent"
+    #[nodeConfigVersion, config, configStatus, timeStamp]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT c.node_configuration_version, c.node_configuration, c.port_configuration_status, c.time_stamp FROM " \
+    "node as n, nodeconfiguration as c WHERE n.node_id = c.node_id"
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
+
+def viewAllCommandSentByNode(nodeId):
+
+def viewAllCommandSent(nodeId):
+
+def viewAllPortDetails(nodeId, portNum):
+
+def sendStartupConfig(nodeId, packetDetails):
+
+def convertDataToFloat():
+def convertDataToString():
+def convertDataToInt():
+    "convert the data to its actual value in int"
+def resendPacket(recentSent):
+def checkIfNodeConfigSent:
+def checkIfProbeStatusSuccess:
+def viewAllSuccessConfigOfPort(nodeId, portId):
+
+def viewAllFailedConfigOfPort(nodeId, portId):
+
+def viewAllSuccessProbeStatus(nodeId): 
+
+def viewAllFailProbeStatus(nodeId): 
 
 #main program
 choice = 0
