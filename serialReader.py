@@ -4,6 +4,7 @@ from array import array
 
 QUEUE_SIZE = 100;
 PORT_COUNT = 12;
+STARTUP_CONFIGURATION_MAX_PART = 5; #(0-4)
 
 packetQueue = collections.deque()
 
@@ -271,6 +272,8 @@ def findNodeByPhysicalAddr(nodePhysicalAddr): #untested
 
         if result is None:
             result = 0
+        else:
+            result = result[0]
     except(MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
     database.close()
@@ -293,15 +296,20 @@ def findPortId(nodeId, portNum):
     database.close()
     return portId
 
-def inputConfiguration(command):
-    "Convert configuration to bytes for saving in the database; accepts string"               
-    command = command.upper() # upper case all
-    command = command.split() # split parameters ['FF', '00'] a str
+def parseStringToIntArray(strInput): #untested
+    "for input type commands; accepts string; return int []"
+    strInput = strInput.upper() # upper case all
+    strInput = strInput.split() # split parameters ['FF', '00'] a str
     packetDetails = array('I') #stores packet (sourceAddr, command, count, portNum and port data)
 
-    for c in command: #FF
+    for c in strInput: #FF
         temp = int(c, 16) #255; int
         packetDetails.append(temp) 
+    return packetDetails
+        
+def inputConfiguration(command):
+    "Convert configuration to bytes for saving in the database; accepts string"               
+    packetDetails = parseStringToIntArray(command)
         
     print(packetDetails) #255 0 1 2 255 0 12(0C) 0 0 254
 
@@ -322,7 +330,11 @@ def inputConfiguration(command):
             nodeConfiguration += chr(s)
             nodeConfiguration += " "
 
-        addNodeConfig(configVersion, nodeId, nodeConfiguration)
+        if packetDetails[-1] == 254:
+            addNodeConfig(configVersion, nodeId, nodeConfiguration)
+            print("footer found")
+        else:
+            print("dropped")
     elif api == 3:
         commandCode = packetDetails[4]
         if commandCode == 0:
@@ -333,10 +345,6 @@ def inputConfiguration(command):
     sendMessage(packetDetails)
     readSerial()
     retrievePacketQueue()
-
-def loadNodeConfig():
-    "load node config to database"
-    print("Derp") #not implemented #not implemented
     
 def parsePacket(): #node can only send commands & data
     "gets the packet from queue & parse commands or data received from node"
@@ -657,7 +665,7 @@ def viewAllDataTypeOfNode(nodeId): #untested
     return result    
 
 def viewAllPortTypeOfNode(nodeId): #untested
-    "display all port type of a nodes"
+    "display all port type of a node"
     #[portNumber, port_type]
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
@@ -708,6 +716,10 @@ def findNodeName(nodeId): #untested
     try:
         cur.execute(sql)
         result = cur.fetchone()
+        if result is None:
+            result = 0
+        else:
+            result = result[0]
     except(MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
     database.close()
@@ -728,7 +740,7 @@ def viewAllProbeStatus(nodeId): #untested
     database.close()
     return result  
 
-def viewAllConfig():
+def viewAllConfigurations(): #untested
     "views all configurations sent"
     #[nodeConfigVersion, config, configStatus, timeStamp]
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
@@ -743,38 +755,183 @@ def viewAllConfig():
     database.close()
     return result  
 
-def viewAllCommandSentByNode(nodeId):
+def viewAllCommandSentByNode(nodeId): #untested
+    "views all commands that node sent to the database"
+    #[commandCode, timeStamp, description]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT c.command_code, c.time_stamp, cd.description FROM command as c, command_code as cd WHERE "\
+    "cd.command_code_id = c.command_code_id AND c.node_id = '%d'" % (nodeId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
 
-def viewAllCommandSent(nodeId):
+def viewAllCommandSent(): #untested
+    "views all commands sent"
+    #[commandCode, timeStamp, description]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT c.command_code, c.time_stamp, cd.description FROM command as "\
+    "c, command_code as cd WHERE cd.command_code_id = c.command_code_id"
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
 
-def viewAllPortDetails(nodeId, portNum):
+def viewAllPortDetailsOfAPort(nodeId, portNum): #untested
+    "views all port details of a specific node port"
+    #[portNumber, port_type]
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT p.port_number, p.port_type, p.data_type, p.device_attached FROM " \
+    "nodeport as p, node as n WHERE n.node_id = p.node_id AND n.node_id = '%d' AND p.port_number = '%d'" % (nodeId, portNumber)
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
 
-def sendStartupConfig(nodeId, packetDetails):
+        if result is None:
+            result = 0
+        else:
+            result = result[0]
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result 
 
-def convertDataToFloat():
-def convertDataToString():
-def convertDataToInt():
-    "convert the data to its actual value in int"
-def resendPacket(recentSent):
-def checkIfNodeConfigSent:
-def checkIfProbeStatusSuccess:
-def viewAllSuccessConfigOfPort(nodeId, portId):
+def sendStartupConfig(nodeId): #untested; NOT FINISHED
+    "sends startup config of a node from database; all"
+    isSuccess = False
 
-def viewAllFailedConfigOfPort(nodeId, portId):
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    #gets most recent part numbers of the port
+    try:
+        for x in range(0, STARTUP_CONFIGURATION_MAX_PART):
+            sql = "SELECT startup_configuration FROM startup_configuration WHERE "\
+            "node_id = '%d' AND part_number = '%d' ORDER BY time_stamp DESC LIMIT 1" % (nodeId, x)
+            cur.execute(sql)
+            result = cur.fetchone()
+            if result is None:
+                result = 0
+            else:
+                result = result[0]
+            intArray = convertStringToInt(result)
 
-def viewAllSuccessProbeStatus(nodeId): 
+        #store to array
+        #send array
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
 
-def viewAllFailProbeStatus(nodeId): 
+    return isSuccess
+
+def addStartupConfig(nodePhysicalAddr, partNumber, startupConfiguration): #untested; bawal din iupdate yung startup config table
+    "adds startup config to database; returns if it is added to database"
+    nodeId = findNodeId(int(nodePhysicalAddr))
+    partNumber = int(partNumber)
+    isSuccess = False   
+
+    if nodeId != 0: #if node exists
+        startupConfiguration = parseStringToIntArray(startupConfiguration)
+        if startupConfiguration[-1] == 254:
+            print("footer found")
+            startupConfigurationStr = ""
+            for s in startupConfiguration:
+                startupConfigurationStr += chr(s)
+                startupConfigurationStr += " "
+            currTime = time.localtime()
+            timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime) 
+            
+            database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+            cur = database.cursor() 
+            sql = "INSERT INTO startup_configuration(part_number, startup_configuration, node_id, time_stamp) " \
+            "VALUES ('%d', '%s', '%d', '%s')" % (partNumber, startupConfigurationStr, nodeId, timeStamp)
+            try:
+                cur.execute(sql)
+                database.commit()
+                isSuccess = True
+            except (MySQLdb.Error, MySQLdb.Warning) as e:
+                print(e)
+                database.rollback()
+            database.close()
+            #sends immediately
+            # sendMessage(startupConfiguration)
+            # readSerial()
+            # retrievePacketQueue()
+        else:
+            print("dropped")
+    else:
+        print("invalid node")
+    return isSuccess
+
+def convertStringToInt(commandStr):
+    "parses command from string to int[]"
+    convertedValue = array('I')
+    # print(type(commandStr))
+    for x in commandStr:
+        convertedValue.append(ord(x))
+    # print("packet to send: ")
+    # print(convertedValue)
+    return convertedValue 
+
+def fetchLatestConfig(configVersion, nodeId):
+    "fetch the config of the latest configversion of nodeId"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    sql = "SELECT node_configuration FROM nodeconfiguration WHERE node_id = '%d' AND node_configuration_version = '%d'"\
+    "ORDER BY time_stamp DESC LIMIT 1" % (nodeId, configVersion)
+    result = ""
+    try:
+        cur.execute(sql)
+        result = cur.fetchone()
+        result = result[0]
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
+
+def sendConfig(nodePhysicalAddr, configVersion):
+    "send latest configuration"
+    nodeId = findNodeId(nodePhysicalAddr)
+    latestConfig = fetchLatestConfig(configVersion, nodeId)
+    intConfigArray = convertStringToInt(latestConfig)
+    sendMessage(intConfigArray)
+    # time.sleep(2)
+    # readSerial()
+    # retrievePacketQueue()
+
+
+    
+#send ka ng startup config
+#resend
+#convert
+#check if
+# def convertDataToFloat():
+# def convertDataToString():
+# def convertDataToInt():
+#     "convert the data to its actual value in int"
+# def resendPacket(recentSent):
+# def checkIfNodeConfigSent:
+# def checkIfProbeStatusSuccess:
 
 #main program
 choice = 0
-while choice != 3:
+while choice != 4:
     print('*************************')
     # print('Command line control')
     print('Choose the corresponding number for command: ')
     print('1. Read WSAN data')
     print('2. Send WSAN config')
-    print('3. Exit')
+    print('3. Add Startup Config')
+    print('4. Exit')
     print('*************************')
     choice = input('Enter choice: ')
 
@@ -787,5 +944,18 @@ while choice != 3:
         command = input('Enter packet to send (bytes are separated by spaces): ')
         inputConfiguration(command)
     elif choice == '3':
+        choiceInput = 'X'
+        while choiceInput != 'N':
+            print("Start from 0")
+            nodePhysicalAddr = input('Enter node physical address:')
+            partNumber = input('Enter part number: ')
+            print("Use uppercase")
+            print("Bytes are separated by spaces")
+            configuration = input('Enter configuration: ')
+            addStartupConfig(nodePhysicalAddr, partNumber, configuration)
+            choiceInput = input('Input more? (Y/N)')
+    elif choice == '4':
         exit()
+    elif choice == '5':
+        sendConfig(1, 255)
 
