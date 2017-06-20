@@ -211,8 +211,8 @@ def addNodeProbeReply(nodePhysicalAddr):
     currTime = time.localtime()
     timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)  
 
-    sql = "INSERT INTO ProbeStatusLog(node_id, reply_time)"\
-    " VALUES ('%d', '%s')" % (nodeId, timeStamp)
+    sql = "INSERT INTO ProbeStatusLog(node_id, reply_time, node_reply)"\
+    " VALUES ('%d', '%s', 1)" % (nodeId, timeStamp)
 
     try:
         cur.execute(sql)
@@ -406,6 +406,7 @@ def parsePacket(): #node can only send commands & data
             #sending port data
             print(packetDetails)
             addPortData(packetDetails) # okay lang int [] kasi pwede madami
+            addCommand(packetDetails[0], packetDetails[1]) # still log it at database
         elif command == 1:
             #updateProbeNodeStatus
             print("a node reply")
@@ -414,7 +415,7 @@ def parsePacket(): #node can only send commands & data
             #node config acknowledgement
             print("port config acknowledgement")
             addNodeConfigReply(packetDetails[0])
-            # addCommand(packetDetails[0], packetDetails[1]) # still log it at database
+            addCommand(packetDetails[0], packetDetails[1]) # still log it at database
         else:
             print(packetDetails)
             addCommand(packetDetails[0], packetDetails[1])
@@ -454,26 +455,6 @@ def sendMessage(packetDetails):
 
     arduino.write(array('B',packetDetails).tobytes())
     time.sleep(0.5)
-
-def updateDeviceAttached(portId, deviceType): #untested
-    "to determine which device is connected to port eg servo, led, relay; returns True/False"
-    isSuccess = False
-    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
-    cur = database.cursor()
-
-    print("@ update device attach")
-
-    try:
-        sql = "UPDATE NodePort SET device_attached = '%s' WHERE port_id = '%d'" % (deviceType, portId)
-        cur.execute(sql)
-        database.commit()
-        isSuccess = True
-    except(MySQLdb.Error, MySQLdb.Warning) as e:
-        print(e)
-        database.rollback()
-
-    database.close()
-    return isSuccess
 
 def updateCommandCodeDescription(commandCode, description): #untested
     "updates command code description; returns True/False"
@@ -559,7 +540,28 @@ def updateNodeStatus(nodePhysicalAddr, nodeStatus): #untested
     database.close()
     return isSuccess #untested
 
-def updatePortDataType(nodePhysicalAddr, dataType): #untested
+#port
+def updateDeviceAttached(portId, deviceType): #untested
+    "to determine which device is connected to port eg servo, led, relay; returns True/False"
+    isSuccess = False
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+
+    print("@ update device attach")
+
+    try:
+        sql = "UPDATE NodePort SET device_attached = '%s' WHERE port_id = '%d'" % (deviceType, portId)
+        cur.execute(sql)
+        database.commit()
+        isSuccess = True
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+        database.rollback()
+
+    database.close()
+    return isSuccess
+
+def updatePortDataType(portId, dataType): #untested
     "update data type interpretation of port value of node eg float, int, string, byte;returns True/False"
     isSuccess  = False
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
@@ -578,8 +580,8 @@ def updatePortDataType(nodePhysicalAddr, dataType): #untested
     database.close()
     return isSuccess
 
-def updatePortType(nodePhysicalAddr, portType): #untested
-    "update port type eg actuator/sensor;returns True/False"
+def updatePortMode(portId, portMode): #untested
+    "update port type eg analog/digital;returns True/False"
     isSuccess = False
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
@@ -587,7 +589,7 @@ def updatePortType(nodePhysicalAddr, portType): #untested
     print("@ update port type")
 
     try:
-        sql = "UPDATE NodePort SET port_type = '%s' WHERE port_id = '%d'" % (portType, portId)
+        sql = "UPDATE NodePort SET port_mode = '%s' WHERE port_id = '%d'" % (portMode, portId)
         cur.execute(sql)
         database.commit()
         isSuccess = True
@@ -597,6 +599,20 @@ def updatePortType(nodePhysicalAddr, portType): #untested
 
     database.close()
     return isSuccess
+
+def updatePortType(portId, portType): 
+    "update port type : actuator/sensor depending on node id"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+
+    cur = database.cursor()
+    sql = "UPDATE NodePort SET port_type = '%s' WHERE port_id = '%d'" % (portType, portId)
+    try:
+        cur.execute(sql)
+        result = cur.fetchall()
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return result  
 
 def viewAllActiveNode(): #untested
     "displays all active nodes"
@@ -664,12 +680,12 @@ def viewAllDataTypeOfNode(nodeId): #untested
     database.close()
     return result    
 
-def viewAllPortTypeOfNode(nodeId): #untested
+def viewAllPortModeOfNode(nodeId): #untested
     "display all port type of a node"
-    #[portNumber, port_type]
+    #[portNumber, port_mode]
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
-    sql = "SELECT port_number, port_type FROM nodeport as p, node as n WHERE n.node_id = p.node_id AND n.node_id = '%d'" %(nodeId)
+    sql = "SELECT port_number, port_mode FROM nodeport as p, node as n WHERE n.node_id = p.node_id AND n.node_id = '%d'" %(nodeId)
     try:
         cur.execute(sql)
         result = cur.fetchall()
@@ -678,7 +694,7 @@ def viewAllPortTypeOfNode(nodeId): #untested
     database.close()
     return result    
 
-def viewAllPortDataOfPort(portId): #untested
+def viewAllPortDataOfPort(portId):
     "display all saved port data of node"
     #[port_value, time_stamp, port_number]
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
@@ -787,10 +803,10 @@ def viewAllCommandSent(): #untested
 
 def viewAllPortDetailsOfAPort(nodeId, portNum): #untested
     "views all port details of a specific node port"
-    #[portNumber, port_type]
+    #[portNumber, port_mode]
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
-    sql = "SELECT p.port_number, p.port_type, p.data_type, p.device_attached FROM " \
+    sql = "SELECT p.port_number, p.port_mode, p.data_type, p.device_attached FROM " \
     "nodeport as p, node as n WHERE n.node_id = p.node_id AND n.node_id = '%d' AND p.port_number = '%d'" % (nodeId, portNumber)
     try:
         cur.execute(sql)
@@ -805,12 +821,13 @@ def viewAllPortDetailsOfAPort(nodeId, portNum): #untested
     database.close()
     return result 
 
-def sendStartupConfig(nodeId): #untested; NOT FINISHED
+def sendStartupConfig(nodeId): #untested; multiple periodical
     "sends startup config of a node from database; all"
     isSuccess = False
 
     database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
     cur = database.cursor()
+    toSendMessage = []
     #gets most recent part numbers of the port
     try:
         for x in range(0, STARTUP_CONFIGURATION_MAX_PART):
@@ -823,9 +840,13 @@ def sendStartupConfig(nodeId): #untested; NOT FINISHED
             else:
                 result = result[0]
             intArray = convertStringToInt(result)
-
-        #store to array
-        #send array
+            toSendMessage.append(intArray) #this is a list
+        for y in range(0, STARTUP_CONFIGURATION_MAX_PART):
+            print("sending")
+            print(toSendMessage[y])
+            sendMessage(toSendMessage[y])
+            # time.sleep(2)
+            # readSerial()
         isSuccess = True
     except(MySQLdb.Error, MySQLdb.Warning) as e:
         print(e)
@@ -908,19 +929,50 @@ def sendConfig(nodePhysicalAddr, configVersion):
     # readSerial()
     # retrievePacketQueue()
 
+def resendPacket(recentSent, timeInterval, count): #untested
+    "resends recentSent for count times every timeInterval (in seconds)"
+    tempCount = 0
+    while count != tempCount:
+        sendMessage(recentSent)
+        time.sleep(timeInterval) 
+        tempCount += 1
+#check ifs
 
-    
-#send ka ng startup config
-#resend
-#convert
-#check if
-# def convertDataToFloat():
-# def convertDataToString():
-# def convertDataToInt():
-#     "convert the data to its actual value in int"
-# def resendPacket(recentSent):
+#get specific port data
+
+def convertHexToVoltageFloat(hexValue):
+    "convert from hex value (values in database are in hex); returns float"
+    convertedValue = int(hexValue)
+    convertedValue = ((convertedValue * 1023) / 999) * (5/1023)
+    return convertedValue
+
+def convertVoltageToInt(hexValue):
+    "convert data from float voltage to int"
+    convertedValue = int(hexValue)
+    return convertedValue
+
+def convertVoltageToBoolean(hexValue):
+    "convert data from int to boolean"
+    hexValue = convertVoltageToInt(hexValue)
+    return bool(hexValue)
+
+def convertIntVoltageToString(hexValue):
+    "convert int voltage value to string"
+    convertedValue = convertVoltageToInt(hexValue)
+    convertedValue = str(convertedValue)
+    return convertedValue
+
+def convertFloatVoltageToString(hexValue):
+    "convert float voltage value to string; rounded off to 3 decimal places"
+    return str(hexValue)
+
+def truncateFloat(floatValue, decimalPlaceCount):
+    "truncates float value to # of decimal places"
+    return round(floatValue, decimalPlaceCount)
+
 # def checkIfNodeConfigSent:
 # def checkIfProbeStatusSuccess:
+# def formatPacket(): #form the packet to send depending on input
 
 #main program
 choice = 0
@@ -957,5 +1009,16 @@ while choice != 4:
     elif choice == '4':
         exit()
     elif choice == '5':
-        sendConfig(1, 255)
+        # sendConfig(1, 255)
+        # sendStartupConfig(2)
+        data = viewAllPortDataOfPort(10)
+        #value, stamp, number
+        hexValue = convertHexToVoltageFloat(data[0][0])
+        print(hexValue)
+        print(truncateFloat(hexValue, 5))
+        print(convertVoltageToInt(hexValue))
+        print(convertVoltageToBoolean(hexValue))
+        print(type(convertIntVoltageToString(hexValue)))
+        print(convertIntVoltageToString(hexValue))
+        print(convertFloatVoltageToString(truncateFloat(hexValue, 3)))
 
