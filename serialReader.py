@@ -5,6 +5,7 @@ from array import array
 QUEUE_SIZE = 100;
 PORT_COUNT = 12;
 STARTUP_CONFIGURATION_MAX_PART = 5; #(0-4)
+PROBE_STATUS_TIMEOUT = 2; #in seconds
 
 packetQueue = collections.deque()
 
@@ -343,8 +344,6 @@ def inputConfiguration(command):
             addCommand(nodePhysicalAddr, commandCode)
 
     sendMessage(packetDetails)
-    readSerial()
-    retrievePacketQueue()
     
 def parsePacket(): #node can only send commands & data
     "gets the packet from queue & parse commands or data received from node"
@@ -454,7 +453,7 @@ def sendMessage(packetDetails):
     "send message to serial; accepts int[]"
 
     arduino.write(array('B',packetDetails).tobytes())
-    time.sleep(0.5)
+    time.sleep(0.2)
 
 def updateCommandCodeDescription(commandCode, description): #untested
     "updates command code description; returns True/False"
@@ -540,7 +539,6 @@ def updateNodeStatus(nodePhysicalAddr, nodeStatus): #untested
     database.close()
     return isSuccess #untested
 
-#port
 def updateDeviceAttached(portId, deviceType): #untested
     "to determine which device is connected to port eg servo, led, relay; returns True/False"
     isSuccess = False
@@ -929,16 +927,16 @@ def sendConfig(nodePhysicalAddr, configVersion):
     # readSerial()
     # retrievePacketQueue()
 
-def resendPacket(recentSent, timeInterval, count): #untested
+def resendPacket(recentSent, timeInterval, count):
     "resends recentSent for count times every timeInterval (in seconds)"
     tempCount = 0
     while count != tempCount:
-        sendMessage(recentSent)
+        inputConfiguration(recentSent) #for parsing and storing at database
         time.sleep(timeInterval) 
         tempCount += 1
-#check ifs
-
-#get specific port data
+        print("sending")
+    readSerial()
+    retrievePacketQueue()
 
 def convertHexToVoltageFloat(hexValue):
     "convert from hex value (values in database are in hex); returns float"
@@ -970,9 +968,16 @@ def truncateFloat(floatValue, decimalPlaceCount):
     "truncates float value to # of decimal places"
     return round(floatValue, decimalPlaceCount)
 
+# convert from string to hex
+# convert float to hex
+# convert int to hex
+# convert boolean to hex
+
 # def checkIfNodeConfigSent:
-# def checkIfProbeStatusSuccess:
-# def formatPacket(): #form the packet to send depending on input
+def checkIfProbeStatusSuccess(nodePhysicalAddr, timeOut):
+    "checks if node replied to probe status within timeout value; returns True or False"
+    
+# def formatPacket(): #form the packet to send depending on input get stuff from db
 
 #main program
 choice = 0
@@ -988,13 +993,17 @@ while choice != 4:
     choice = input('Enter choice: ')
 
     if choice == '1':
+        #ithread mo ito
         time.sleep(2)
         readSerial()
         retrievePacketQueue()
     elif choice == '2':
+        #ithread mo ito
         print("use uppercase")
         command = input('Enter packet to send (bytes are separated by spaces): ')
         inputConfiguration(command)
+        readSerial()
+        retrievePacketQueue()
     elif choice == '3':
         choiceInput = 'X'
         while choiceInput != 'N':
@@ -1021,4 +1030,8 @@ while choice != 4:
         print(type(convertIntVoltageToString(hexValue)))
         print(convertIntVoltageToString(hexValue))
         print(convertFloatVoltageToString(truncateFloat(hexValue, 3)))
+        recentSent = "FF 00 01 03 00 FE"
+        timeInterval = 2
+        count = 15
+        resendPacket(recentSent, timeInterval, count)
 
