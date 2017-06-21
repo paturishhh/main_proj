@@ -1,11 +1,11 @@
 import collections, binascii, time, MySQLdb
 import serial, datetime
+from datetime import datetime, timedelta
 from array import array
 
 QUEUE_SIZE = 100;
 PORT_COUNT = 12;
 STARTUP_CONFIGURATION_MAX_PART = 5; #(0-4)
-PROBE_STATUS_TIMEOUT = 2; #in seconds
 
 packetQueue = collections.deque()
 
@@ -430,6 +430,7 @@ def readSerial():
             while arduino.in_waiting > 0 and (len(packetQueue) != QUEUE_SIZE): 
             #while there is data and queue not full
                 data = arduino.readline()[:-2] #removes /r and /n
+                print(data)
                 
                 if len(packetQueue) != QUEUE_SIZE:
                     packetQueue.append(data) #insert data to queue
@@ -452,8 +453,10 @@ def retrievePacketQueue():
 def sendMessage(packetDetails):
     "send message to serial; accepts int[]"
 
-    arduino.write(array('B',packetDetails).tobytes())
-    time.sleep(0.2)
+    packetDetails = array('B',packetDetails).tobytes()
+    for i in range(0, len(packetDetails)):
+        arduino.write(packetDetails[i])
+        time.sleep(0.2)
 
 def updateCommandCodeDescription(commandCode, description): #untested
     "updates command code description; returns True/False"
@@ -927,16 +930,16 @@ def sendConfig(nodePhysicalAddr, configVersion):
     # readSerial()
     # retrievePacketQueue()
 
-def resendPacket(recentSent, timeInterval, count):
-    "resends recentSent for count times every timeInterval (in seconds)"
+def resendPacket(recentSent, timeInterval, attempts): # untested
+    "resends recentSent for attempt times every timeInterval (in seconds)"
     tempCount = 0
     while count != tempCount:
         inputConfiguration(recentSent) #for parsing and storing at database
         time.sleep(timeInterval) 
         tempCount += 1
         print("sending")
-    readSerial()
-    retrievePacketQueue()
+        readSerial()
+        retrievePacketQueue()
 
 def convertHexToVoltageFloat(hexValue):
     "convert from hex value (values in database are in hex); returns float"
@@ -968,16 +971,87 @@ def truncateFloat(floatValue, decimalPlaceCount):
     "truncates float value to # of decimal places"
     return round(floatValue, decimalPlaceCount)
 
+def checkIfProbeStatusSuccess(nodePhysicalAddr, timeOut):
+    "checks if node replied to probe status within timeout (in seconds) value; returns True or False"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr)
+    isValid = False
+    latestProbe = "SELECT probe_time FROM probestatuslog WHERE node_reply = 0 and node_id = '%d' order by probe_time desc LIMIT 1" % (nodeId)
+    latestReply = "SELECT reply_time FROM probestatuslog WHERE node_reply = 1 and node_id = '%d' order by reply_time desc LIMIT 1" % (nodeId)
+    try:
+        cur.execute(latestProbe)
+        result = cur.fetchone()
+        probeTime = result[0]
+
+        cur.execute(latestReply)
+        result = cur.fetchone()
+        replyTime = result[0]
+
+        timeDifference = probeTime - replyTime
+        # print("timeDifference: ")
+        print(timeDifference)
+
+        convertedTimeOutTime = timedelta(seconds = int(timeOut))
+        print(convertedTimeOutTime)
+        if timeDifference < convertedTimeOutTime:
+            isValid = True
+            print("received")
+        else:            
+            print("slow")
+
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return isValid
+
+# def formatPacket(): #form the packet to send depending on input get stuff from db
 # convert from string to hex
 # convert float to hex
 # convert int to hex
 # convert boolean to hex
+# thread read and write
+# interval in sending and attempts
+#inform user of error
 
-# def checkIfNodeConfigSent:
-def checkIfProbeStatusSuccess(nodePhysicalAddr, timeOut):
-    "checks if node replied to probe status within timeout value; returns True or False"
-    
-# def formatPacket(): #form the packet to send depending on input get stuff from db
+def checkIfNodeConfigSent(nodePhysicalAddr, timeOut):
+    "checks if node replied to node configuration within timeout (in seconds) value; returns True or False"
+    database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
+    cur = database.cursor()
+    nodeId = findNodeId(nodePhysicalAddr)
+    isValid = False
+    latestNodeConfig = "SELECT time_stamp FROM nodeconfiguration WHERE port_configuration_status = 0 AND node_id = '%d' ORDER BY time_stamp DESC LIMIT 1" % (nodeId)
+    latestNodeConfigReply = "SELECT time_stamp FROM nodeconfiguration WHERE port_configuration_status = 1 AND node_id = '%d' ORDER BY time_stamp DESC LIMIT 1" % (nodeId)
+    try:
+        cur.execute(latestNodeConfig)
+        result = cur.fetchone()
+        sentTime = result[0]
+
+        cur.execute(latestNodeConfigReply)
+        result = cur.fetchone()
+        replyTime = result[0]
+
+        # print(latestNodeConfig)
+        # print(latestNodeConfigReply)
+
+        timeDifference = sentTime - replyTime
+        print("timeDifference: ")
+        print(timeDifference)
+
+        convertedTimeOutTime = timedelta(seconds = int(timeOut))
+        print(convertedTimeOutTime)
+        print(timeDifference < convertedTimeOutTime)
+        if timeDifference < convertedTimeOutTime:
+            isValid = True
+            print("received")
+        else:            
+            print("slow")
+
+    except(MySQLdb.Error, MySQLdb.Warning) as e:
+        print(e)
+    database.close()
+    return isValid
+
 
 #main program
 choice = 0
@@ -1031,7 +1105,10 @@ while choice != 4:
         print(convertIntVoltageToString(hexValue))
         print(convertFloatVoltageToString(truncateFloat(hexValue, 3)))
         recentSent = "FF 00 01 03 00 FE"
-        timeInterval = 2
+        timeInterval = 0.1
         count = 15
-        resendPacket(recentSent, timeInterval, count)
-
+        # resendPacket(recentSent, timeInterval, count)
+        checkIfProbeStatusSuccess(1, 2031)
+        # checkIfNodeConfigSent(1, 1031)
+        # for i in range(0, 60):
+        
