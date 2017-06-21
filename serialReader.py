@@ -1,5 +1,6 @@
 import collections, binascii, time, MySQLdb
 import serial, datetime
+from threading import Thread
 from datetime import datetime, timedelta
 from array import array
 
@@ -8,12 +9,6 @@ PORT_COUNT = 12;
 STARTUP_CONFIGURATION_MAX_PART = 5; #(0-4)
 
 packetQueue = collections.deque()
-
-arduino = serial.Serial()
-arduino.port = 'COM4'
-arduino.baudrate = 9600
-arduino.timeout = None
-arduino.open()
 
 #Note: nodePhysicalAddr == node's physical address
 # nodeId = id of the node at the database
@@ -421,42 +416,40 @@ def parsePacket(): #node can only send commands & data
     else:
         print("invalid packet")
     
-def readSerial():
+def readSerial(arduino):
     "read serial data from COM4 and store to queue"
-    
-    try:
-        if arduino.is_open:
-            # time.sleep(2) #wait
-            while arduino.in_waiting > 0 and (len(packetQueue) != QUEUE_SIZE): 
-            #while there is data and queue not full
-                data = arduino.readline()[:-2] #removes /r and /n
-                print(data)
-                
-                if len(packetQueue) != QUEUE_SIZE:
-                    packetQueue.append(data) #insert data to queue
-                    # parsePacket() #parse one when full
-                    # print(data)
-                    # print(len(packetQueue))
-                else:
-                    print("queue is full")
-            # arduino.close() #close serial
-        else:
-            print('derp')
-    except SerialException as e:
-        print(e)
+    print(arduino.serialIsWriting)
+    while arduino.serialIsWriting == False:
+        try:
+            if arduino.is_open:
+                # time.sleep(2) #wait
+                while arduino.in_waiting > 0: 
+                #while there is data and queue not full
+                    data = arduino.readline()[:-2] #removes /r and /n
+                    print(data)
+                # print(serialIsWriting)                    
+            else:
+                print('derp')
+        except SerialException as e:
+            print(e)
+
+    while arduino.serialIsWriting:
+        print("meep")
 
 def retrievePacketQueue():
     "parse messages while queue is not empty"
     while len(packetQueue) != 0:
             parsePacket() 
 
-def sendMessage(packetDetails):
+def sendMessage(arduino, packetDetails):
     "send message to serial; accepts int[]"
-
     packetDetails = array('B',packetDetails).tobytes()
-    for i in range(0, len(packetDetails)):
-        arduino.write(packetDetails[i])
-        time.sleep(0.2)
+    serialIsWriting = True
+
+    arduino.write(packetDetails)
+    time.sleep(0.2)
+    print("here????")
+    serialIsWriting = False
 
 def updateCommandCodeDescription(commandCode, description): #untested
     "updates command code description; returns True/False"
@@ -1053,62 +1046,72 @@ def checkIfNodeConfigSent(nodePhysicalAddr, timeOut):
     return isValid
 
 
-#main program
-choice = 0
-while choice != 4:
-    print('*************************')
-    # print('Command line control')
-    print('Choose the corresponding number for command: ')
-    print('1. Read WSAN data')
-    print('2. Send WSAN config')
-    print('3. Add Startup Config')
-    print('4. Exit')
-    print('*************************')
-    choice = input('Enter choice: ')
+def main():
+    arduino = serial.Serial()
+    arduino.port = 'COM4'
+    arduino.baudrate = 9600
+    arduino.timeout = None
+    arduino.open()
+    arduino.serialIsWriting = False
+    thread = Thread(target = readSerial, args=(arduino, ))
+    thread.start()
+    choice = 0
+    while choice != 4:
+        print('*************************')
+        # print('Command line control')
+        print('Choose the corresponding number for command: ')
+        print('1. Read WSAN data')
+        print('2. Send WSAN config')
+        print('3. Add Startup Config')
+        print('4. Exit')
+        print('*************************')
+        choice = input('Enter choice: ')
 
-    if choice == '1':
-        #ithread mo ito
-        time.sleep(2)
-        readSerial()
-        retrievePacketQueue()
-    elif choice == '2':
-        #ithread mo ito
-        print("use uppercase")
-        command = input('Enter packet to send (bytes are separated by spaces): ')
-        inputConfiguration(command)
-        readSerial()
-        retrievePacketQueue()
-    elif choice == '3':
-        choiceInput = 'X'
-        while choiceInput != 'N':
-            print("Start from 0")
-            nodePhysicalAddr = input('Enter node physical address:')
-            partNumber = input('Enter part number: ')
-            print("Use uppercase")
-            print("Bytes are separated by spaces")
-            configuration = input('Enter configuration: ')
-            addStartupConfig(nodePhysicalAddr, partNumber, configuration)
-            choiceInput = input('Input more? (Y/N)')
-    elif choice == '4':
-        exit()
-    elif choice == '5':
-        # sendConfig(1, 255)
-        # sendStartupConfig(2)
-        data = viewAllPortDataOfPort(10)
-        #value, stamp, number
-        hexValue = convertHexToVoltageFloat(data[0][0])
-        print(hexValue)
-        print(truncateFloat(hexValue, 5))
-        print(convertVoltageToInt(hexValue))
-        print(convertVoltageToBoolean(hexValue))
-        print(type(convertIntVoltageToString(hexValue)))
-        print(convertIntVoltageToString(hexValue))
-        print(convertFloatVoltageToString(truncateFloat(hexValue, 3)))
-        recentSent = "FF 00 01 03 00 FE"
-        timeInterval = 0.1
-        count = 15
-        # resendPacket(recentSent, timeInterval, count)
-        checkIfProbeStatusSuccess(1, 2031)
-        # checkIfNodeConfigSent(1, 1031)
-        # for i in range(0, 60):
-        
+        if choice == '1':
+            #ithread mo ito
+            time.sleep(2)
+            readSerial(arduino)
+            # retrievePacketQueue()
+        elif choice == '2':
+            #ithread mo ito
+            # print("use uppercase")
+            # command = input('Enter packet to send (bytes are separated by spaces): ')
+            packetDetails = [255, 0, 1, 3, 0, 254]
+            sendMessage(arduino, packetDetails)
+            # inputConfiguration(command)
+            # readSerial()
+            # retrievePacketQueue()
+        elif choice == '3':
+            choiceInput = 'X'
+            while choiceInput != 'N':
+                print("Start from 0")
+                nodePhysicalAddr = input('Enter node physical address:')
+                partNumber = input('Enter part number: ')
+                print("Use uppercase")
+                print("Bytes are separated by spaces")
+                configuration = input('Enter configuration: ')
+                addStartupConfig(nodePhysicalAddr, partNumber, configuration)
+                choiceInput = input('Input more? (Y/N)')
+        elif choice == '4':
+            exit()
+        elif choice == '5':
+            # sendConfig(1, 255)
+            # sendStartupConfig(2)
+            data = viewAllPortDataOfPort(10)
+            #value, stamp, number
+            # hexValue = convertHexToVoltageFloat(data[0][0])
+            # print(hexValue)
+            # print(truncateFloat(hexValue, 5))
+            # print(convertVoltageToInt(hexValue))
+            # print(convertVoltageToBoolean(hexValue))
+            # print(type(convertIntVoltageToString(hexValue)))
+            # print(convertIntVoltageToString(hexValue))
+            # print(convertFloatVoltageToString(truncateFloat(hexValue, 3)))
+            # recentSent = "FF 00 01 03 00 FE"
+            # timeInterval = 0.1
+            # count = 15
+            # resendPacket(recentSent, timeInterval, count)
+            # checkIfProbeStatusSuccess(1, 2031)
+            # checkIfNodeConfigSent(1, 1031)
+            # for i in range(0, 60):
+main()
