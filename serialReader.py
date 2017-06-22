@@ -1,5 +1,6 @@
 import collections, binascii, time, MySQLdb
-import serial, datetime
+import serial, datetime, queue
+from serial import SerialException
 from threading import Thread
 from datetime import datetime, timedelta
 from array import array
@@ -8,7 +9,10 @@ QUEUE_SIZE = 100;
 PORT_COUNT = 12;
 STARTUP_CONFIGURATION_MAX_PART = 5; #(0-4)
 
-packetQueue = collections.deque()
+packetQueue = queue.Queue() #sending queue
+serialQueue = queue.Queue() #received queue
+
+serialIsWriting = False
 
 #Note: nodePhysicalAddr == node's physical address
 # nodeId = id of the node at the database
@@ -85,9 +89,11 @@ def addCommand(nodePhysicalAddr, commandCode):
     #physical address node , commandCode
     "save command sent on database; accepts int []; returns True/False"
     isSuccess = False
-    print("@ insert command")
-    print(commandCode)
+    # print("@ insert command")
+    # print(commandCode)
     try:
+        currTime = time.localtime()
+        timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
         nodeId = findNodeId(nodePhysicalAddr) #check if there is already added
         commandCodeId = findCommandCodeId(commandCode)
         
@@ -100,8 +106,6 @@ def addCommand(nodePhysicalAddr, commandCode):
         database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
         cur = database.cursor()
 
-        currTime = time.localtime()
-        timeStamp = time.strftime('%Y-%m-%d %H:%M:%S', currTime)
         sql = "INSERT INTO Command(node_id, command_code_id, time_stamp, command_code) VALUES ('%d', '%d', '%s', '%d')" % (nodeId, commandCodeId, timeStamp, commandCode)
         cur.execute(sql)
         database.commit()
@@ -222,7 +226,7 @@ def addNodeProbeReply(nodePhysicalAddr):
 
 def findCommandCodeId(commandCode):
     "returns command code id by giving the command code"
-    print("@ command command code id")
+    # print("@ command command code id")
     commandCodeId = 0
     try:
         database = MySQLdb.connect(host="localhost", user ="root", passwd = "root", db ="thesis")
@@ -304,8 +308,9 @@ def parseStringToIntArray(strInput): #untested
     return packetDetails
         
 def inputConfiguration(command):
-    "Convert configuration to bytes for saving in the database; accepts string"               
+    "Convert configuration to bytes for saving in the database then puts the message into queue; accepts string"               
     packetDetails = parseStringToIntArray(command)
+    global packetQueue
         
     print(packetDetails) #255 0 1 2 255 0 12(0C) 0 0 254
 
@@ -328,7 +333,7 @@ def inputConfiguration(command):
 
         if packetDetails[-1] == 254:
             addNodeConfig(configVersion, nodeId, nodeConfiguration)
-            print("footer found")
+            # print("footer found")
         else:
             print("dropped")
     elif api == 3:
@@ -338,12 +343,17 @@ def inputConfiguration(command):
         else:
             addCommand(nodePhysicalAddr, commandCode)
 
-    sendMessage(packetDetails)
+    # print("added at packetqueue")
+    print("stored at database")
+    packetQueue.put(packetDetails)
+    # print(serialIsWriting)
+    print(packetQueue.qsize())
     
 def parsePacket(): #node can only send commands & data
-    "gets the packet from queue & parse commands or data received from node"
+    "gets the packet from serialQueue & parse commands or data received from node and stores to database"
     packetDetails = array('I') #stores packet details (sourceAddr, command, count, portNum and port data)
-    packet = packetQueue.popleft()
+    global serialQueue
+    packet = serialQueue.get()
     isValid = False
     
     print(packet)
@@ -415,41 +425,62 @@ def parsePacket(): #node can only send commands & data
             addCommand(packetDetails[0], packetDetails[1])
     else:
         print("invalid packet")
-    
+    print("parse done")
+
 def readSerial(arduino):
-    "read serial data from COM4 and store to queue"
-    print(arduino.serialIsWriting)
-    while arduino.serialIsWriting == False:
-        try:
-            if arduino.is_open:
-                # time.sleep(2) #wait
-                while arduino.in_waiting > 0: 
-                #while there is data and queue not full
-                    data = arduino.readline()[:-2] #removes /r and /n
-                    print(data)
-                # print(serialIsWriting)                    
-            else:
-                print('derp')
-        except SerialException as e:
-            print(e)
+    "read serial data from COM4 and store to serialQueue"
+    global serialQueue
+    global serialIsWriting
 
-    while arduino.serialIsWriting:
-        print("meep")
+    while True:
+        while serialIsWriting == False:
+            try:
+                if arduino.is_open:
+                    while arduino.in_waiting > 0: 
+                        data = arduino.readline()[:-2] #removes /r and /n
+                        # print("---received: ")
+                        # print(data)
+                        serialQueue.put(data)
+                        # print(serialIsWriting)
+                else:
+                    print('derp')
+            except SerialException as e:
+                print(e)
 
-def retrievePacketQueue():
-    "parse messages while queue is not empty"
-    while len(packetQueue) != 0:
-            parsePacket() 
+        while serialIsWriting:
+            print("meep")
 
-def sendMessage(arduino, packetDetails):
+def retrieveSerialQueue():
+    "parse messages from serial swhile queue is not empty"
+    global serialQueue
+    while True:
+        while serialQueue.qsize() > 0: #while not empty parse packet
+                parsePacket() 
+
+# def retrievePacketQueue():
+#     "parse messages from serial swhile queue is not empty"
+#     global packetQueue
+#     while True:
+#         while packetQueue.empty() == False: #while not empty parse packet
+#                 sendMessage(arduino)
+
+def sendMessage(arduino):
     "send message to serial; accepts int[]"
-    packetDetails = array('B',packetDetails).tobytes()
-    serialIsWriting = True
-
-    arduino.write(packetDetails)
-    time.sleep(0.2)
-    print("here????")
-    serialIsWriting = False
+    global packetQueue
+    global serialIsWriting
+    while True: 
+        while packetQueue.qsize() > 0:
+            packetDetails = packetQueue.get()
+            packetDetails = array('B',packetDetails).tobytes()
+            serialIsWriting = True
+            arduino.write(packetDetails)
+            # time.sleep(0.1)
+            serialIsWriting = False
+            print("isWriting at send")
+            print(serialIsWriting)
+            print("----sent")
+            print(packetDetails)
+    
 
 def updateCommandCodeDescription(commandCode, description): #untested
     "updates command code description; returns True/False"
@@ -1047,41 +1078,44 @@ def checkIfNodeConfigSent(nodePhysicalAddr, timeOut):
 
 
 def main():
+    
     arduino = serial.Serial()
     arduino.port = 'COM4'
     arduino.baudrate = 9600
     arduino.timeout = None
-    arduino.open()
-    arduino.serialIsWriting = False
-    thread = Thread(target = readSerial, args=(arduino, ))
-    thread.start()
+    arduino.open()  
+
+    readThread = Thread(target = readSerial, args=(arduino, ))
+    parseSerialThread = Thread(target = retrieveSerialQueue, args=()) #get from queue, parse and store to database
+    # parsePacketThread = Thread(target = retrievePacketQueue, args=()) #get from queue, parse and store to database
+    writeThread = Thread(target = sendMessage, args=(arduino, ))
+    readThread.start()
+    parseSerialThread.start()
+    # parsePacketThread.start()
+    writeThread.start()
+
     choice = 0
     while choice != 4:
         print('*************************')
         # print('Command line control')
         print('Choose the corresponding number for command: ')
-        print('1. Read WSAN data')
-        print('2. Send WSAN config')
-        print('3. Add Startup Config')
-        print('4. Exit')
+        print('1. Send WSAN config')
+        print('2. Add Startup Config')
         print('*************************')
         choice = input('Enter choice: ')
 
         if choice == '1':
             #ithread mo ito
-            time.sleep(2)
-            readSerial(arduino)
-            # retrievePacketQueue()
-        elif choice == '2':
-            #ithread mo ito
             # print("use uppercase")
             # command = input('Enter packet to send (bytes are separated by spaces): ')
-            packetDetails = [255, 0, 1, 3, 0, 254]
-            sendMessage(arduino, packetDetails)
-            # inputConfiguration(command)
+            command = "FF 00 01 02 FF 00 94 FE"
+            # packetDetails = [255, 0, 1, 3, 0, 254]
+            # sendMessage(arduino, packetDetails)
+            inputConfiguration(command)
+            # sendMessage(arduino)
             # readSerial()
             # retrievePacketQueue()
-        elif choice == '3':
+        elif choice == '2':
             choiceInput = 'X'
             while choiceInput != 'N':
                 print("Start from 0")
@@ -1092,8 +1126,6 @@ def main():
                 configuration = input('Enter configuration: ')
                 addStartupConfig(nodePhysicalAddr, partNumber, configuration)
                 choiceInput = input('Input more? (Y/N)')
-        elif choice == '4':
-            exit()
         elif choice == '5':
             # sendConfig(1, 255)
             # sendStartupConfig(2)
